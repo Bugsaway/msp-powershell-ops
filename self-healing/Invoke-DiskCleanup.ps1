@@ -31,7 +31,7 @@ function Get-FreeGB {
     $d = Get-CimInstance Win32_LogicalDisk -Filter "DeviceID='$drive'"
     [math]::Round($d.FreeSpace / 1GB, 2)
 }
-function Remove-PathContents {
+function Clear-PathContent {
     param([string]$Path)
     if (Test-Path $Path) {
         Get-ChildItem -LiteralPath $Path -Force -ErrorAction SilentlyContinue |
@@ -52,21 +52,21 @@ if ($before -ge $ThresholdPercent) {
 Write-Output "Below threshold ($ThresholdPercent%). Starting cleanup..."
 
 # --- Light cleanup ---
-Remove-PathContents "$env:windir\Temp"
+Clear-PathContent "$env:windir\Temp"
 
 Get-ChildItem "$drive\Users" -Directory -ErrorAction SilentlyContinue | ForEach-Object {
     $u = $_.FullName
-    Remove-PathContents "$u\AppData\Local\Temp"
+    Clear-PathContent "$u\AppData\Local\Temp"
     if ($ClearBrowserCache) {
-        Remove-PathContents "$u\AppData\Local\Google\Chrome\User Data\Default\Cache"
-        Remove-PathContents "$u\AppData\Local\Microsoft\Edge\User Data\Default\Cache"
-        Remove-PathContents "$u\AppData\Local\Microsoft\Windows\INetCache"
+        Clear-PathContent "$u\AppData\Local\Google\Chrome\User Data\Default\Cache"
+        Clear-PathContent "$u\AppData\Local\Microsoft\Edge\User Data\Default\Cache"
+        Clear-PathContent "$u\AppData\Local\Microsoft\Windows\INetCache"
     }
 }
 
 # Windows Error Reporting queues
-Remove-PathContents "$env:ProgramData\Microsoft\Windows\WER\ReportQueue"
-Remove-PathContents "$env:ProgramData\Microsoft\Windows\WER\ReportArchive"
+Clear-PathContent "$env:ProgramData\Microsoft\Windows\WER\ReportQueue"
+Clear-PathContent "$env:ProgramData\Microsoft\Windows\WER\ReportArchive"
 
 # Delivery Optimization cache
 try { Delete-DeliveryOptimizationCache -Force -ErrorAction SilentlyContinue } catch {}
@@ -74,7 +74,7 @@ try { Delete-DeliveryOptimizationCache -Force -ErrorAction SilentlyContinue } ca
 # Recycle Bin (direct folder method is reliable under SYSTEM)
 if ($ClearRecycleBin) {
     $rb = Join-Path $drive '$Recycle.Bin'
-    Remove-PathContents $rb
+    Clear-PathContent $rb
 }
 
 $mid = Get-FreePercent
@@ -88,7 +88,7 @@ if ($mid -lt $ThresholdPercent) {
     try {
         Stop-Service wuauserv -Force -ErrorAction SilentlyContinue
         Stop-Service bits -Force -ErrorAction SilentlyContinue
-        Remove-PathContents "$env:windir\SoftwareDistribution\Download"
+        Clear-PathContent "$env:windir\SoftwareDistribution\Download"
         Start-Service bits -ErrorAction SilentlyContinue
         Start-Service wuauserv -ErrorAction SilentlyContinue
     } catch { Write-Output "WU cache cleanup error: $($_.Exception.Message)" }

@@ -51,7 +51,7 @@ Start-Sleep 2
 & w32tm /resync /rediscover /force | Out-Null
 Start-Sleep 3
 
-function Get-OffsetSeconds {
+function Get-ClockOffset {
     $source = if ($domainJoined) { ((& w32tm /query /source) | Select-Object -First 1) } else { 'time.windows.com' }
     if (-not $source -or $source -match 'Local CMOS|Free-running') { $source = 'time.windows.com' }
     $out = & w32tm /stripchart /computer:$source /dataonly /samples:1 2>$null
@@ -61,7 +61,7 @@ function Get-OffsetSeconds {
     return $null
 }
 
-$offset = Get-OffsetSeconds
+$offset = Get-ClockOffset
 if ($null -eq $offset) {
     Write-Output "Could not measure time offset (source unreachable / UDP 123 blocked?)."
     Write-Output "RESULT: Resync forced but offset unverifiable."

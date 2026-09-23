@@ -22,7 +22,7 @@
 $ErrorActionPreference = 'Continue'
 $script:BytesFreed = 0
 
-function Remove-OldFiles {
+function Remove-OldFile {
     param([string]$Path, [int]$AgeDays, [string]$Label)
     if (-not (Test-Path $Path)) { Write-Output "  $Label - path not found, skipping."; return }
     $cutoff = (Get-Date).AddDays(-$AgeDays)
@@ -48,7 +48,7 @@ try {
     $wuPath = "$env:SystemRoot\SoftwareDistribution\Download"
     try {
         Stop-Service wuauserv, bits -Force -ErrorAction SilentlyContinue
-        Remove-OldFiles -Path $wuPath -AgeDays 7 -Label "WU Download cache"
+        Remove-OldFile -Path $wuPath -AgeDays 7 -Label "WU Download cache"
         # Prune now-empty subfolders
         Get-ChildItem $wuPath -Directory -Force -ErrorAction SilentlyContinue |
             Where-Object { -not (Get-ChildItem $_.FullName -Recurse -Force -File -ErrorAction SilentlyContinue) } |
@@ -76,8 +76,8 @@ try {
 
     # --- 4. Crash dumps ---
     Write-Output "[4/6] Crash dumps older than 14 days..."
-    Remove-OldFiles -Path "$env:SystemRoot\Minidump" -AgeDays 14 -Label "Minidumps"
-    Remove-OldFiles -Path "$env:SystemRoot\LiveKernelReports" -AgeDays 14 -Label "LiveKernelReports"
+    Remove-OldFile -Path "$env:SystemRoot\Minidump" -AgeDays 14 -Label "Minidumps"
+    Remove-OldFile -Path "$env:SystemRoot\LiveKernelReports" -AgeDays 14 -Label "LiveKernelReports"
     $memDmp = Get-Item "$env:SystemRoot\MEMORY.DMP" -ErrorAction SilentlyContinue
     if ($memDmp -and $memDmp.LastWriteTime -lt (Get-Date).AddDays(-14)) {
         $script:BytesFreed += $memDmp.Length
@@ -89,7 +89,7 @@ try {
     Write-Output "[5/6] Recycle Bin items older than 7 days (all users)..."
     $binRoot = "C:\`$Recycle.Bin"
     if (Test-Path $binRoot) {
-        Remove-OldFiles -Path $binRoot -AgeDays 7 -Label "Recycle Bin"
+        Remove-OldFile -Path $binRoot -AgeDays 7 -Label "Recycle Bin"
     }
 
     # --- 6. Archived CBS/DISM logs ---

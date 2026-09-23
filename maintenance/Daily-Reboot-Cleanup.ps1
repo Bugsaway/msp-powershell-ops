@@ -21,7 +21,7 @@ $TempFileAgeDays    = 1
 $WERAgeDays         = 7
 $script:BytesFreed  = 0
 
-function Remove-OldFiles {
+function Remove-OldFile {
     param([string]$Path, [int]$AgeDays, [string]$Label)
     if (-not (Test-Path $Path)) { return }
     $cutoff = (Get-Date).AddDays(-$AgeDays)
@@ -49,11 +49,11 @@ try {
 
     # --- 1. Temp files ---
     Write-Output "[1/4] Cleaning temp files older than $TempFileAgeDays day(s)..."
-    Remove-OldFiles -Path "$env:SystemRoot\Temp" -AgeDays $TempFileAgeDays -Label "Windows Temp"
+    Remove-OldFile -Path "$env:SystemRoot\Temp" -AgeDays $TempFileAgeDays -Label "Windows Temp"
     Get-ChildItem "C:\Users" -Directory -ErrorAction SilentlyContinue | ForEach-Object {
         $userTemp = Join-Path $_.FullName "AppData\Local\Temp"
         if (Test-Path $userTemp) {
-            Remove-OldFiles -Path $userTemp -AgeDays $TempFileAgeDays -Label "Temp: $($_.Name)"
+            Remove-OldFile -Path $userTemp -AgeDays $TempFileAgeDays -Label "Temp: $($_.Name)"
         }
     }
 
@@ -74,8 +74,8 @@ try {
 
     # --- 3. WER queue older than 7 days ---
     Write-Output "[3/4] Cleaning Windows Error Reporting queue older than $WERAgeDays days..."
-    Remove-OldFiles -Path "$env:ProgramData\Microsoft\Windows\WER\ReportQueue"   -AgeDays $WERAgeDays -Label "WER ReportQueue"
-    Remove-OldFiles -Path "$env:ProgramData\Microsoft\Windows\WER\ReportArchive" -AgeDays $WERAgeDays -Label "WER ReportArchive"
+    Remove-OldFile -Path "$env:ProgramData\Microsoft\Windows\WER\ReportQueue"   -AgeDays $WERAgeDays -Label "WER ReportQueue"
+    Remove-OldFile -Path "$env:ProgramData\Microsoft\Windows\WER\ReportArchive" -AgeDays $WERAgeDays -Label "WER ReportArchive"
 
     # --- 4. DNS flush ---
     Write-Output "[4/4] Flushing DNS cache..."
