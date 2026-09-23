@@ -7,6 +7,10 @@
     Also stops Weave first since it holds a Chrome window open and blocks the cache delete.
     Cache_Data only. Cookies, sessions, passwords, and history are untouched.
     For the fleet-wide, all-users version run as SYSTEM, see Monthly-Super-Clean.ps1 step 6.
+.NOTES
+    Run context : Logged-on user, elevated not required
+    Exit        : Always 0
+    Output      : One line per browser profile cleared, or "not installed" per browser
 #>
 
 $browsers = @(

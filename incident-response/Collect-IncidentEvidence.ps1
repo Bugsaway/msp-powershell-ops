@@ -27,6 +27,12 @@
 .PARAMETER NoZip
     Leave the collection as a folder instead of zipping it.
 
+.NOTES
+    Run context : Elevated by hand, or SYSTEM through NinjaOne
+    Exit 0      : Collection complete. Per-item failures are logged to 00_CollectionErrors.txt and do not stop the run
+    Exit 1      : Not running elevated
+    Runtime     : 15 to 30 minutes. Full disk listing and browser profiles are the slow parts
+    Output      : <OutputRoot>\<CaseId>_<host>_<stamp>.zip plus a .sha256 beside it. Chain of custody log inside
 .EXAMPLE
     # Local, default output C:\IR
     Set-ExecutionPolicy Bypass -Scope Process -Force
@@ -71,7 +77,7 @@ function Log {
     Add-Content -Path $log -Value $line
 }
 
-function Try-Run {
+function Invoke-Step {
     param([string]$Label, [scriptblock]$Action)
     try {
         & $Action
@@ -122,30 +128,30 @@ $vol = Join-Path $caseDir "01_Volatile"
 New-Item -ItemType Directory -Path $vol -Force | Out-Null
 Log "--- 1. Volatile state ---"
 
-Try-Run "System info"        { systeminfo | Out-File "$vol\systeminfo.txt" -Encoding UTF8 }
-Try-Run "Date and timezone"  { Get-Date | Out-File "$vol\datetime.txt"; tzutil /g | Out-File "$vol\timezone.txt" }
-Try-Run "Uptime"             { (Get-CimInstance Win32_OperatingSystem).LastBootUpTime | Out-File "$vol\lastboot.txt" }
-Try-Run "Logged on users"    { query user 2>&1 | Out-File "$vol\query_user.txt"; quser 2>&1 | Out-File "$vol\quser.txt" -Append }
-Try-Run "Net sessions"       { net session 2>&1 | Out-File "$vol\net_session.txt" }
-Try-Run "netstat -anob"      { netstat -anob | Out-File "$vol\netstat_anob.txt" }
-Try-Run "TCP connections"    { Get-NetTCPConnection | Select-Object LocalAddress,LocalPort,RemoteAddress,RemotePort,State,OwningProcess,@{n="Process";e={(Get-Process -Id $_.OwningProcess -ErrorAction SilentlyContinue).ProcessName}} | Export-Csv "$vol\tcp_connections.csv" -NoTypeInformation }
-Try-Run "DNS cache"          { ipconfig /displaydns | Out-File "$vol\dns_cache.txt"; Get-DnsClientCache | Export-Csv "$vol\dns_cache.csv" -NoTypeInformation }
-Try-Run "ipconfig /all"      { ipconfig /all | Out-File "$vol\ipconfig_all.txt" }
-Try-Run "ARP table"          { arp -a | Out-File "$vol\arp.txt" }
-Try-Run "Routes"             { route print | Out-File "$vol\route_print.txt" }
-Try-Run "Hosts file"         { Copy-Item "$env:SystemRoot\System32\drivers\etc\hosts" "$vol\hosts.txt" -Force }
-Try-Run "Processes (detail)" {
+Invoke-Step "System info"        { systeminfo | Out-File "$vol\systeminfo.txt" -Encoding UTF8 }
+Invoke-Step "Date and timezone"  { Get-Date | Out-File "$vol\datetime.txt"; tzutil /g | Out-File "$vol\timezone.txt" }
+Invoke-Step "Uptime"             { (Get-CimInstance Win32_OperatingSystem).LastBootUpTime | Out-File "$vol\lastboot.txt" }
+Invoke-Step "Logged on users"    { query user 2>&1 | Out-File "$vol\query_user.txt"; quser 2>&1 | Out-File "$vol\quser.txt" -Append }
+Invoke-Step "Net sessions"       { net session 2>&1 | Out-File "$vol\net_session.txt" }
+Invoke-Step "netstat -anob"      { netstat -anob | Out-File "$vol\netstat_anob.txt" }
+Invoke-Step "TCP connections"    { Get-NetTCPConnection | Select-Object LocalAddress,LocalPort,RemoteAddress,RemotePort,State,OwningProcess,@{n="Process";e={(Get-Process -Id $_.OwningProcess -ErrorAction SilentlyContinue).ProcessName}} | Export-Csv "$vol\tcp_connections.csv" -NoTypeInformation }
+Invoke-Step "DNS cache"          { ipconfig /displaydns | Out-File "$vol\dns_cache.txt"; Get-DnsClientCache | Export-Csv "$vol\dns_cache.csv" -NoTypeInformation }
+Invoke-Step "ipconfig /all"      { ipconfig /all | Out-File "$vol\ipconfig_all.txt" }
+Invoke-Step "ARP table"          { arp -a | Out-File "$vol\arp.txt" }
+Invoke-Step "Routes"             { route print | Out-File "$vol\route_print.txt" }
+Invoke-Step "Hosts file"         { Copy-Item "$env:SystemRoot\System32\drivers\etc\hosts" "$vol\hosts.txt" -Force }
+Invoke-Step "Processes (detail)" {
     Get-CimInstance Win32_Process | Select-Object ProcessId,ParentProcessId,Name,ExecutablePath,CommandLine,CreationDate,
         @{n="Owner";e={ $o = Invoke-CimMethod -InputObject $_ -MethodName GetOwner -ErrorAction SilentlyContinue; "$($o.Domain)\$($o.User)" }} |
         Export-Csv "$vol\processes.csv" -NoTypeInformation
 }
-Try-Run "Process hashes"     {
+Invoke-Step "Process hashes"     {
     Get-Process | Where-Object { $_.Path } | Select-Object Id,ProcessName,Path,@{n="SHA256";e={ (Get-FileHash $_.Path -Algorithm SHA256 -ErrorAction SilentlyContinue).Hash }} |
         Sort-Object Path -Unique | Export-Csv "$vol\process_hashes.csv" -NoTypeInformation
 }
-Try-Run "Services (all)"     { Get-CimInstance Win32_Service | Select-Object Name,DisplayName,State,StartMode,StartName,PathName,ProcessId | Export-Csv "$vol\services.csv" -NoTypeInformation }
-Try-Run "Services (sc query)" { sc.exe query type= service state= all | Out-File "$vol\sc_query_all.txt" }
-Try-Run "Scheduled tasks"    {
+Invoke-Step "Services (all)"     { Get-CimInstance Win32_Service | Select-Object Name,DisplayName,State,StartMode,StartName,PathName,ProcessId | Export-Csv "$vol\services.csv" -NoTypeInformation }
+Invoke-Step "Services (sc query)" { sc.exe query type= service state= all | Out-File "$vol\sc_query_all.txt" }
+Invoke-Step "Scheduled tasks"    {
     Get-ScheduledTask | ForEach-Object {
         $t = $_
         $i = $t | Get-ScheduledTaskInfo -ErrorAction SilentlyContinue
@@ -162,20 +168,20 @@ Try-Run "Scheduled tasks"    {
     } | Export-Csv "$vol\scheduled_tasks.csv" -NoTypeInformation
     schtasks /query /fo CSV /v | Out-File "$vol\schtasks_verbose.csv" -Encoding UTF8
 }
-Try-Run "Local users"        { Get-LocalUser | Select-Object Name,Enabled,LastLogon,PasswordLastSet,Description,SID | Export-Csv "$vol\local_users.csv" -NoTypeInformation }
-Try-Run "Local admins"       { Get-LocalGroupMember Administrators | Select-Object Name,ObjectClass,PrincipalSource | Export-Csv "$vol\local_admins.csv" -NoTypeInformation }
-Try-Run "RDP group"          { Get-LocalGroupMember "Remote Desktop Users" -ErrorAction SilentlyContinue | Export-Csv "$vol\rdp_users.csv" -NoTypeInformation }
-Try-Run "Mapped drives"      { net use 2>&1 | Out-File "$vol\net_use.txt"; Get-SmbMapping -ErrorAction SilentlyContinue | Export-Csv "$vol\smb_mappings.csv" -NoTypeInformation }
-Try-Run "Shares"             { Get-SmbShare | Export-Csv "$vol\smb_shares.csv" -NoTypeInformation }
-Try-Run "Firewall rules"     { Get-NetFirewallRule | Where-Object Enabled -eq True | Select-Object DisplayName,Direction,Action,Profile,Program | Export-Csv "$vol\firewall_rules.csv" -NoTypeInformation }
-Try-Run "Installed programs" {
+Invoke-Step "Local users"        { Get-LocalUser | Select-Object Name,Enabled,LastLogon,PasswordLastSet,Description,SID | Export-Csv "$vol\local_users.csv" -NoTypeInformation }
+Invoke-Step "Local admins"       { Get-LocalGroupMember Administrators | Select-Object Name,ObjectClass,PrincipalSource | Export-Csv "$vol\local_admins.csv" -NoTypeInformation }
+Invoke-Step "RDP group"          { Get-LocalGroupMember "Remote Desktop Users" -ErrorAction SilentlyContinue | Export-Csv "$vol\rdp_users.csv" -NoTypeInformation }
+Invoke-Step "Mapped drives"      { net use 2>&1 | Out-File "$vol\net_use.txt"; Get-SmbMapping -ErrorAction SilentlyContinue | Export-Csv "$vol\smb_mappings.csv" -NoTypeInformation }
+Invoke-Step "Shares"             { Get-SmbShare | Export-Csv "$vol\smb_shares.csv" -NoTypeInformation }
+Invoke-Step "Firewall rules"     { Get-NetFirewallRule | Where-Object Enabled -eq True | Select-Object DisplayName,Direction,Action,Profile,Program | Export-Csv "$vol\firewall_rules.csv" -NoTypeInformation }
+Invoke-Step "Installed programs" {
     $paths = "HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\*",
              "HKLM:\SOFTWARE\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall\*",
              "HKU:\*\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\*"
     if (-not (Get-PSDrive HKU -ErrorAction SilentlyContinue)) { New-PSDrive HKU Registry HKEY_USERS | Out-Null }
     Get-ItemProperty $paths -ErrorAction SilentlyContinue | Select-Object DisplayName,DisplayVersion,Publisher,InstallDate,InstallLocation,UninstallString,PSPath | Export-Csv "$vol\installed_programs.csv" -NoTypeInformation
 }
-Try-Run "Defender status"    { Get-MpComputerStatus | Out-File "$vol\defender_status.txt"; Get-MpThreatDetection -ErrorAction SilentlyContinue | Export-Csv "$vol\defender_detections.csv" -NoTypeInformation; Get-MpPreference | Out-File "$vol\defender_prefs.txt" }
+Invoke-Step "Defender status"    { Get-MpComputerStatus | Out-File "$vol\defender_status.txt"; Get-MpThreatDetection -ErrorAction SilentlyContinue | Export-Csv "$vol\defender_detections.csv" -NoTypeInformation; Get-MpPreference | Out-File "$vol\defender_prefs.txt" }
 
 # ---------------------------------------------------------------------------
 # 2. Event logs
@@ -203,7 +209,7 @@ $logsToExport = @(
 )
 foreach ($l in $logsToExport) {
     $safe = ($l -replace '[\\/ ]', '_') + ".evtx"
-    Try-Run "evtx $l" {
+    Invoke-Step "evtx $l" {
         $r = wevtutil epl "$l" "$evt\$safe" 2>&1
         if ($LASTEXITCODE -ne 0) { throw "wevtutil: $r" }
     }
@@ -212,27 +218,27 @@ foreach ($l in $logsToExport) {
 Copy-Tree "$env:SystemRoot\System32\winevt\Logs" "$evt\RawLogs" "Raw winevt copy"
 
 # Quick-read extracts for the things that matter most
-Try-Run "7045 service installs (csv)" {
+Invoke-Step "7045 service installs (csv)" {
     Get-WinEvent -FilterHashtable @{LogName="System"; Id=7045} -ErrorAction SilentlyContinue |
         Select-Object TimeCreated,Id,@{n="Message";e={$_.Message -replace "`r`n"," | "}} |
         Export-Csv "$evt\Extract_7045_ServiceInstalls.csv" -NoTypeInformation
 }
-Try-Run "MSI installer events (csv)" {
+Invoke-Step "MSI installer events (csv)" {
     Get-WinEvent -FilterHashtable @{LogName="Application"; ProviderName="MsiInstaller"} -ErrorAction SilentlyContinue |
         Select-Object TimeCreated,Id,@{n="Message";e={$_.Message -replace "`r`n"," | "}} |
         Export-Csv "$evt\Extract_MsiInstaller.csv" -NoTypeInformation
 }
-Try-Run "Logon events 4624/4625/4634/4648/4672 (csv)" {
+Invoke-Step "Logon events 4624/4625/4634/4648/4672 (csv)" {
     Get-WinEvent -FilterHashtable @{LogName="Security"; Id=4624,4625,4634,4648,4672,4720,4722,4724,4728,4732,4738} -ErrorAction SilentlyContinue |
         Select-Object TimeCreated,Id,@{n="Message";e={$_.Message -replace "`r`n"," | "}} |
         Export-Csv "$evt\Extract_Security_Logons_Accounts.csv" -NoTypeInformation
 }
-Try-Run "Security 4688 process creation (csv)" {
+Invoke-Step "Security 4688 process creation (csv)" {
     Get-WinEvent -FilterHashtable @{LogName="Security"; Id=4688} -ErrorAction SilentlyContinue |
         Select-Object TimeCreated,Id,@{n="Message";e={$_.Message -replace "`r`n"," | "}} |
         Export-Csv "$evt\Extract_Security_4688.csv" -NoTypeInformation
 }
-Try-Run "Log clear events 1102/104 (csv)" {
+Invoke-Step "Log clear events 1102/104 (csv)" {
     $a = Get-WinEvent -FilterHashtable @{LogName="Security"; Id=1102} -ErrorAction SilentlyContinue
     $b = Get-WinEvent -FilterHashtable @{LogName="System"; Id=104} -ErrorAction SilentlyContinue
     ($a + $b) | Select-Object TimeCreated,Id,LogName,@{n="Message";e={$_.Message -replace "`r`n"," | "}} |
@@ -248,7 +254,7 @@ Log "--- 3. Registry ---"
 
 # Full hive saves (works live via reg save)
 foreach ($h in "SYSTEM","SOFTWARE","SECURITY","SAM") {
-    Try-Run "reg save $h" {
+    Invoke-Step "reg save $h" {
         $r = reg save "HKLM\$h" "$reg\$h.hiv" /y 2>&1
         if ($LASTEXITCODE -ne 0) { throw "reg save: $r" }
     }
@@ -259,8 +265,8 @@ Get-ChildItem "C:\Users" -Directory | ForEach-Object {
     $nt = Join-Path $_.FullName "NTUSER.DAT"
     $uc = Join-Path $_.FullName "AppData\Local\Microsoft\Windows\UsrClass.dat"
     New-Item -ItemType Directory -Path "$reg\Users\$u" -Force | Out-Null
-    if (Test-Path $nt) { Try-Run "NTUSER.DAT $u" { $null = robocopy $_.FullName "$reg\Users\$u" NTUSER.DAT /COPY:DAT /R:0 /W:0 /B /NFL /NDL /NJH /NJS 2>&1 ; if ($LASTEXITCODE -gt 7) { esentutl /y "$nt" /d "$reg\Users\$u\NTUSER.DAT" /o | Out-Null } } }
-    if (Test-Path $uc) { Try-Run "UsrClass.dat $u" { esentutl /y "$uc" /d "$reg\Users\$u\UsrClass.dat" /o | Out-Null } }
+    if (Test-Path $nt) { Invoke-Step "NTUSER.DAT $u" { $null = robocopy $_.FullName "$reg\Users\$u" NTUSER.DAT /COPY:DAT /R:0 /W:0 /B /NFL /NDL /NJH /NJS 2>&1 ; if ($LASTEXITCODE -gt 7) { esentutl /y "$nt" /d "$reg\Users\$u\NTUSER.DAT" /o | Out-Null } } }
+    if (Test-Path $uc) { Invoke-Step "UsrClass.dat $u" { esentutl /y "$uc" /d "$reg\Users\$u\UsrClass.dat" /o | Out-Null } }
 }
 # Targeted text exports for quick reading
 $regTargets = @{
@@ -279,16 +285,16 @@ $regTargets = @{
     "PolicyScripts"       = "HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\Group Policy\Scripts"
 }
 foreach ($k in $regTargets.Keys) {
-    Try-Run "reg export $k" {
+    Invoke-Step "reg export $k" {
         $r = reg export $regTargets[$k] "$reg\$k.reg" /y 2>&1
         if ($LASTEXITCODE -ne 0) { throw "reg export: $r" }
     }
 }
-Try-Run "ScreenConnect service keys" {
+Invoke-Step "ScreenConnect service keys" {
     reg query "HKLM\SYSTEM\CurrentControlSet\Services" /s /f "ScreenConnect" /k 2>&1 | Out-File "$reg\ScreenConnect_ServiceKeys.txt"
     reg query "HKLM\SOFTWARE" /s /f "ScreenConnect" 2>&1 | Out-File "$reg\ScreenConnect_SOFTWARE_search.txt"
 }
-Try-Run "Per-user Run keys" {
+Invoke-Step "Per-user Run keys" {
     if (-not (Get-PSDrive HKU -ErrorAction SilentlyContinue)) { New-PSDrive HKU Registry HKEY_USERS | Out-Null }
     Get-ChildItem "HKU:\" | ForEach-Object {
         $sid = $_.PSChildName
@@ -319,19 +325,19 @@ foreach ($root in $scRoots) {
     }
 }
 # MSI cache inventory
-Try-Run "Installer MSI cache inventory" {
+Invoke-Step "Installer MSI cache inventory" {
     Get-ChildItem "$env:SystemRoot\Installer" -Filter *.msi -ErrorAction SilentlyContinue | ForEach-Object {
         [pscustomobject]@{ File=$_.FullName; Size=$_.Length; Created=$_.CreationTime; Modified=$_.LastWriteTime; SHA256=(Get-FileHash $_.FullName -Algorithm SHA256).Hash }
     } | Export-Csv "$sc\Installer_msi_inventory.csv" -NoTypeInformation
 }
-Try-Run "Remote access config dump" {
+Invoke-Step "Remote access config dump" {
     Get-ChildItem $sc -Recurse -Include "system.config","app.config","*.config" -ErrorAction SilentlyContinue | ForEach-Object {
         "==== $($_.FullName)" | Out-File "$sc\_AllConfigs.txt" -Append
         Get-Content $_.FullName -ErrorAction SilentlyContinue | Out-File "$sc\_AllConfigs.txt" -Append
         "" | Out-File "$sc\_AllConfigs.txt" -Append
     }
 }
-Try-Run "Per-user remote access folders" {
+Invoke-Step "Per-user remote access folders" {
     Get-ChildItem "C:\Users" -Directory | ForEach-Object {
         $u = $_.Name
         foreach ($sub in "AppData\Local","AppData\Roaming","AppData\Local\Temp") {
@@ -352,12 +358,12 @@ $rb = Join-Path $caseDir "05_RecycleBin"
 New-Item -ItemType Directory -Path $rb -Force | Out-Null
 Log "--- 5. Recycle Bin ---"
 Copy-Tree 'C:\$Recycle.Bin' "$rb\Recycle.Bin" "Recycle Bin raw"
-Try-Run "Recycle Bin listing" {
+Invoke-Step "Recycle Bin listing" {
     Get-ChildItem 'C:\$Recycle.Bin' -Recurse -Force -ErrorAction SilentlyContinue |
         Select-Object FullName,Length,CreationTime,LastWriteTime,LastAccessTime |
         Export-Csv "$rb\RecycleBin_listing.csv" -NoTypeInformation
 }
-Try-Run "Recycle Bin `$I decode" {
+Invoke-Step "Recycle Bin `$I decode" {
     # $I files: 8 bytes header, 8 bytes size, 8 bytes FILETIME deleted, 4 bytes name length (v2), then UTF-16 name
     Get-ChildItem 'C:\$Recycle.Bin' -Recurse -Force -Filter '$I*' -ErrorAction SilentlyContinue | ForEach-Object {
         try {
@@ -398,19 +404,19 @@ Get-ChildItem "C:\Users" -Directory -ErrorAction SilentlyContinue | Where-Object
     Copy-Tree "$h\AppData\Roaming\Mozilla\Firefox\Profiles"   "$d\Firefox" "$u Firefox"
     Copy-Tree "$h\AppData\Local\BraveSoftware\Brave-Browser\User Data" "$d\Brave" "$u Brave"
     # Outlook OST/PST listing only (too large to copy, and the mailbox is in M365 anyway)
-    Try-Run "$u Outlook file listing" {
+    Invoke-Step "$u Outlook file listing" {
         Get-ChildItem "$h\AppData\Local\Microsoft\Outlook" -Include *.ost,*.pst,*.nst -Recurse -ErrorAction SilentlyContinue |
             Select-Object FullName,Length,CreationTime,LastWriteTime | Export-Csv "$d\Outlook_files.csv" -NoTypeInformation
     }
     # Full profile file listing with timestamps for timeline work
-    Try-Run "$u profile listing" {
+    Invoke-Step "$u profile listing" {
         Get-ChildItem $h -Recurse -Force -ErrorAction SilentlyContinue |
             Select-Object FullName,Length,CreationTime,LastWriteTime,LastAccessTime,Attributes |
             Export-Csv "$d\_FullListing.csv" -NoTypeInformation
     }
 }
 # Locked browser DBs: force copy with esentutl for Chromium History/Cookies/Login Data
-Try-Run "Locked browser DB copies" {
+Invoke-Step "Locked browser DB copies" {
     Get-ChildItem "C:\Users\*\AppData\Local\*\*\User Data\*\" -Include "History","Cookies","Login Data","Web Data","Network\Cookies" -Recurse -ErrorAction SilentlyContinue | ForEach-Object {
         $rel = $_.FullName -replace '^C:\\Users\\',''
         $dst = Join-Path "$up\_LockedDBCopies" ($rel -replace '[:]','')
@@ -436,9 +442,9 @@ Copy-Tree "$env:ProgramData\Microsoft\Windows Defender\Support" "$sys\DefenderSu
 Copy-Tree "$env:ProgramData\Microsoft\Windows Defender\Quarantine" "$sys\DefenderQuarantine" "Defender quarantine"
 Copy-Tree "$env:ProgramData\Microsoft\Windows Defender\Scans\History" "$sys\DefenderScanHistory" "Defender scan history"
 Copy-Tree "$env:SystemRoot\inf" "$sys\inf_setupapi" "setupapi logs (device history)"
-Try-Run "Amcache.hve forced copy" { esentutl /y "$env:SystemRoot\AppCompat\Programs\Amcache.hve" /d "$sys\Amcache.hve" /o | Out-Null }
-Try-Run "SRUDB.dat forced copy"   { esentutl /y "$env:SystemRoot\System32\sru\SRUDB.dat" /d "$sys\SRUDB.dat" /o | Out-Null }
-Try-Run "Recent file changes (45 days)" {
+Invoke-Step "Amcache.hve forced copy" { esentutl /y "$env:SystemRoot\AppCompat\Programs\Amcache.hve" /d "$sys\Amcache.hve" /o | Out-Null }
+Invoke-Step "SRUDB.dat forced copy"   { esentutl /y "$env:SystemRoot\System32\sru\SRUDB.dat" /d "$sys\SRUDB.dat" /o | Out-Null }
+Invoke-Step "Recent file changes (45 days)" {
     $cut = (Get-Date).AddDays(-45)
     # foreach is a statement, not a pipeline element, so collect first then pipe
     $scan = foreach ($p in "C:\Windows\Temp","C:\ProgramData","C:\Users","C:\Program Files","C:\Program Files (x86)","C:\Windows\System32","C:\Windows\SysWOW64","C:\Temp","C:\PerfLogs","C:\Intel","C:\") {
@@ -447,19 +453,19 @@ Try-Run "Recent file changes (45 days)" {
     }
     $scan | ForEach-Object { $_ } | Sort-Object CreationTime | Export-Csv "$sys\RecentFiles_since_$($cut.ToString('yyyyMMdd')).csv" -NoTypeInformation
 }
-Try-Run "Executables in user-writable paths" {
+Invoke-Step "Executables in user-writable paths" {
     Get-ChildItem "C:\Users","C:\ProgramData","C:\Windows\Temp","C:\Temp" -Recurse -Force -Include *.exe,*.dll,*.msi,*.ps1,*.bat,*.cmd,*.vbs,*.js,*.hta,*.scr -ErrorAction SilentlyContinue |
         Select-Object FullName,Length,CreationTime,LastWriteTime,@{n="SHA256";e={ (Get-FileHash $_.FullName -Algorithm SHA256 -ErrorAction SilentlyContinue).Hash }} |
         Export-Csv "$sys\UserWritable_Executables.csv" -NoTypeInformation
 }
-Try-Run "Alternate data streams (Zone.Identifier) in Downloads" {
+Invoke-Step "Alternate data streams (Zone.Identifier) in Downloads" {
     Get-ChildItem "C:\Users\*\Downloads" -Recurse -File -ErrorAction SilentlyContinue | ForEach-Object {
         $z = Get-Content -Path $_.FullName -Stream Zone.Identifier -ErrorAction SilentlyContinue
         if ($z) { [pscustomobject]@{ File=$_.FullName; Created=$_.CreationTime; ZoneIdentifier=($z -join " | ") } }
     } | Export-Csv "$sys\Downloads_ZoneIdentifier.csv" -NoTypeInformation
 }
 if (-not $SkipFullListing) {
-    Try-Run "Full C:\ directory listing" {
+    Invoke-Step "Full C:\ directory listing" {
         # Big, but it is the single most useful thing for timeline reconstruction after the box is gone.
         # Excludes the collection folder so the listing doesn't eat its own output.
         Get-ChildItem "C:\" -Recurse -Force -ErrorAction SilentlyContinue | Where-Object { $_.FullName -notlike "$caseDir*" } |
@@ -473,7 +479,7 @@ if (-not $SkipFullListing) {
 # ---------------------------------------------------------------------------
 Log "--- 8. Hashing and packaging ---"
 $manifest = Join-Path $caseDir "00_HashManifest_SHA256.csv"
-Try-Run "Hash manifest" {
+Invoke-Step "Hash manifest" {
     Get-ChildItem $caseDir -Recurse -File -ErrorAction SilentlyContinue | Where-Object { $_.FullName -ne $manifest } |
         ForEach-Object {
             $h = Get-FileHash $_.FullName -Algorithm SHA256 -ErrorAction SilentlyContinue
@@ -487,7 +493,7 @@ Log "Files collected: $fileCount  ($sizeMB MB)"
 $zip = "$caseDir.zip"
 $zipHash = $null
 if (-not $NoZip) {
-    Try-Run "Zip package" {
+    Invoke-Step "Zip package" {
         Compress-Archive -Path "$caseDir\*" -DestinationPath $zip -CompressionLevel Optimal -Force
     }
 }

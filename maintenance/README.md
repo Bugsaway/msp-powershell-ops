@@ -26,7 +26,7 @@ Scheduled server reboot that refuses to fire if Eaglesoft is live. Two detection
 
 Interactive tune-up for a single slow Windows 10 or 11 box. Run elevated, reboot after. 20 to 40 minutes. Read the section 1 baseline first: if it reports an HDD, stop and swap in an SSD, nothing below will help.
 
-It queues chkdsk /f for next boot, turns off hibernate, sets the High Performance plan, and clears event logs. Comment out any section that doesn't fit the machine. Don't run it on anything under investigation, since section 9 wipes the logs. The scheduled scripts above are the fleet-safe equivalents.
+It turns off hibernate, sets the High Performance plan, and clears event logs. Comment out any section that doesn't fit the machine. Don't run it on anything under investigation, since section 9 wipes the logs. The scheduled scripts above are the fleet-safe equivalents.
 
 ### Clear-BrowserCache.ps1
 

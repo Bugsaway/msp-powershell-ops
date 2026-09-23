@@ -72,7 +72,8 @@ msp-powershell-ops/
   incident-response/   Evidence collection under chain of custody
   backup/              Backup job setup for practice management databases
   hardware/            Device-level fixes (USB power management)
-  .github/workflows/   PSScriptAnalyzer and 5.1 parse check on every push
+  tests/               Pester tests that enforce the conventions above
+  .github/workflows/   Parse check, Pester, and PSScriptAnalyzer on every push
 ```
 
 ## Script catalog
@@ -209,9 +210,15 @@ On demand only: updates/Reset-WindowsUpdate, diagnostics/Find-ServiceTaskCulprit
 - Allowlists and expected lists to fill before first run: `$AllowedScreenConnectInstances` (remote access audit), `$ExpectedMembers` (admin audit), `$ExpectedDnsServers` (network baseline), `$ExcludeUsers` (stale profiles), `$Checks` (backup freshness), `$TimeZone` (baseline).
 - Pilot detect-only scripts first (monitoring, security audits). They change nothing and show what the fleet looks like before the self-healing scripts start acting on it.
 
-## Linting
+## Linting and tests
 
-Every push runs `.github/workflows/lint.yml`: a Windows PowerShell 5.1 parse check across all scripts, then PSScriptAnalyzer with the rules in `PSScriptAnalyzerSettings.psd1`. Excluded rules are listed there with the reason each one is off.
+Every push runs `.github/workflows/lint.yml` in three steps:
+
+1. A Windows PowerShell 5.1 parse check across every script.
+2. Pester tests in `tests/` that enforce the conventions: every script has comment-based help with an exit contract, no `/ResetBase`, no `chkdsk /f` or `/r`, allowlists committed empty, and scripts that call themselves read-only don't call state-changing cmdlets.
+3. PSScriptAnalyzer with the rules in `PSScriptAnalyzerSettings.psd1`. Excluded rules are listed there with the reason each one is off.
+
+Run the tests locally with `Invoke-Pester -Path ./tests`.
 
 ## License
 

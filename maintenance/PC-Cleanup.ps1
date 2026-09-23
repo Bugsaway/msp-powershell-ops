@@ -11,7 +11,7 @@
                   fleet-safe equivalents.
     Exit        : Always 0. Reboot when it finishes.
     Runtime     : 20 to 40 minutes, mostly DISM and SFC.
-    Side effects: chkdsk /f queued for next boot, hibernate off, High Performance plan,
+    Side effects: hibernate off, High Performance plan,
                   event logs cleared. Don't run on a machine under investigation.
 #>
 
@@ -97,9 +97,11 @@ Get-Volume | Where-Object { $_.DriveLetter -and $_.DriveType -eq "Fixed" } | For
     Optimize-Volume -DriveLetter $_.DriveLetter -Verbose
 }
 
-# Schedule chkdsk on next boot for C:
-Write-Host "--- Scheduling chkdsk /f on C: for next reboot ---"
-echo Y | chkdsk C: /f
+# Online volume check. Scan first, SpotFix only if it finds something. No offline chkdsk queued.
+Write-Host "--- Repair-Volume scan on C: ---"
+$scan = Repair-Volume -DriveLetter C -Scan
+Write-Host "Scan result: $scan"
+if ("$scan" -ne 'NoErrorsFound') { Repair-Volume -DriveLetter C -SpotFix }
 
 # ---------- 7. Power and visual tweaks ----------
 Write-Host "`n--- Power plan ---"

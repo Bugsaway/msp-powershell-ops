@@ -60,4 +60,4 @@ All parameters, no config block. Pass them on the command line or edit the defau
 | `-SkipFullListing` | off | Big disks where the full C:\ listing would take too long |
 | `-NoZip` | off | Leaving the folder in place for a tool that reads it directly |
 
-To add an artifact: copy any `Copy-Tree` or `Try-Run` line in the matching section and change the source path and label. The hash manifest and zip pick it up automatically.
+To add an artifact: copy any `Copy-Tree` or `Invoke-Step` line in the matching section and change the source path and label. The hash manifest and zip pick it up automatically.
