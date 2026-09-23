@@ -1,0 +1,13 @@
+# Local scratch and output
+*.bak
+*.log
+*.zip
+IR/
+**/out/
+**/RestoreTest/
+
+# Editor and OS noise
+.vscode/
+.idea/
+Thumbs.db
+.DS_Store
